@@ -26,10 +26,9 @@ THE SOFTWARE.
   Config page. derived class specific entries should go to configure-entries.jsp
 -->
 <?jelly escape-by-default='true'?>
-<j:jelly xmlns:j="jelly:core"
-		 xmlns:st="jelly:stapler"
-		 xmlns:l="/lib/layout"
-		 xmlns:f="/lib/form">
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler"
+		 xmlns:l="/lib/layout" xmlns:f="/lib/form"
+		>
 	<l:layout title="${it.displayName} Config" norefresh="true"
 			  permission="${it.EXTENDED_READ}">
 		<st:include page="sidepanel.jelly"/>
@@ -53,8 +52,7 @@ THE SOFTWARE.
 								previewEndpoint="/markupFormatter/previewDescription"/>
 				</f:entry>
 
-				<st:include it="${it.templateProject}"
-							page="configure-top.jelly"/>
+				<!-- Log rotation and job properties moved to sub-project options-->
 
 				<!-- additional entries from derived classes -->
 				<st:include page="configure-entries.jelly"/>

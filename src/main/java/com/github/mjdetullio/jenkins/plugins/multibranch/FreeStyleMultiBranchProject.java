@@ -70,6 +70,8 @@ import hudson.model.Action;
 import hudson.model.BallColor;
 import hudson.model.BuildAuthorizationToken;
 import hudson.model.Descriptor;
+import hudson.model.FreeStyleBuild;
+import hudson.model.FreeStyleProject;
 import hudson.model.HealthReport;
 import hudson.model.Item;
 import hudson.model.ItemGroup;
@@ -120,7 +122,7 @@ import net.sf.json.JSONObject;
  * @author Matthew DeTullio
  */
 public class FreeStyleMultiBranchProject extends
-		Project<FreeStyleBranchProject, FreeStyleBranchBuild> implements
+		Project<FreeStyleProject, FreeStyleBuild> implements
 		TopLevelItem, ItemGroup<FreeStyleBranchProject>, ViewGroup,
 		SCMSourceOwner {
 
@@ -270,8 +272,8 @@ public class FreeStyleMultiBranchProject extends
 	 * {@inheritDoc}
 	 */
 	@Override
-	protected Class<FreeStyleBranchBuild> getBuildClass() {
-		return FreeStyleBranchBuild.class;
+	protected Class<FreeStyleBuild> getBuildClass() {
+		return FreeStyleBuild.class;
 	}
 
 	/**
@@ -1150,7 +1152,7 @@ public class FreeStyleMultiBranchProject extends
 
 		for (FreeStyleBranchProject item : getItems()) {
 			branchCount++;
-			FreeStyleBranchBuild lastBuild = item.getLastBuild();
+			FreeStyleBuild lastBuild = item.getLastBuild();
 			if (lastBuild != null) {
 				branchBuild++;
 				Result r = lastBuild.getResult();

@@ -23,8 +23,13 @@
  */
 package com.github.mjdetullio.jenkins.plugins.multibranch;
 
+import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
@@ -33,17 +38,15 @@ import org.kohsuke.stapler.interceptor.RequirePOST;
 
 import com.infradna.tool.bridge_method_injector.WithBridgeMethods;
 
-import hudson.DescriptorExtensionList;
-import hudson.Extension;
 import hudson.init.InitMilestone;
 import hudson.init.Initializer;
+import hudson.model.AbstractProject;
+import hudson.model.FreeStyleBuild;
+import hudson.model.FreeStyleProject;
 import hudson.model.Item;
 import hudson.model.ItemGroup;
 import hudson.model.Items;
 import hudson.model.JobProperty;
-import hudson.model.Project;
-import hudson.model.TopLevelItem;
-import hudson.model.TopLevelItemDescriptor;
 import hudson.triggers.Trigger;
 import hudson.triggers.TriggerDescriptor;
 import hudson.util.CopyOnWriteList;
@@ -51,15 +54,15 @@ import hudson.util.DescribableList;
 import jenkins.model.Jenkins;
 
 /**
- * Wrapper for the {@link Project} class that imitates normal {@link
- * hudson.model.FreeStyleProject}s, but for use as a sub-project of the {@link
- * FreeStyleMultiBranchProject} type.
+ * Wrapper for the {@link FreeStyleProject} class for use as a sub-project of
+ * the {@link FreeStyleMultiBranchProject} type.
  *
  * @author Matthew DeTullio
  */
-public class FreeStyleBranchProject
-		extends Project<FreeStyleBranchProject, FreeStyleBranchBuild>
-		implements TopLevelItem {
+public class FreeStyleBranchProject extends FreeStyleProject {
+
+	private static final String CLASSNAME = FreeStyleBranchProject.class.getName();
+	private static final Logger LOGGER = Logger.getLogger(CLASSNAME);
 
 	private static final String UNUSED = "unused";
 
@@ -80,7 +83,8 @@ public class FreeStyleBranchProject
 	 * {@inheritDoc}
 	 */
 	@Override
-	public void onLoad(ItemGroup<? extends Item> parent, String name) throws IOException {
+	public void onLoad(ItemGroup<? extends Item> parent, String name)
+			throws IOException {
 		/*
 		 * Name parameter should be the directory name, which needs to be
 		 * decoded.
@@ -122,21 +126,101 @@ public class FreeStyleBranchProject
 	}
 
 	/**
-	 * {@inheritDoc}
-	 */
-	@Override
-	protected Class<FreeStyleBranchBuild> getBuildClass() {
-		return FreeStyleBranchBuild.class;
-	}
-
-	/**
-	 * {@inheritDoc}
+	 * Bad way of allowing Jenkins to find a descriptor for this type without
+	 * actually providing our own descriptor.  Most applicable for Jelly views.
+	 * <p/> {@inheritDoc}
 	 */
 	@Override
 	public DescriptorImpl getDescriptor() {
 		return (DescriptorImpl) Jenkins.getInstance().getDescriptorOrDie(
-				getClass());
+				FreeStyleProject.class);
 	}
+
+	//region AbstractProject mirror
+
+	protected synchronized FreeStyleBuild newBuild() throws IOException {
+		// make sure we don't start two builds in the same second
+		// so the build directories will be different too
+
+		// Hack to set lastBuildStartTime since it is not exposed
+		try {
+			Field f = AbstractProject.class.getDeclaredField(
+					"lastBuildStartTime");
+			f.setAccessible(true);
+
+			long timeSinceLast = System.currentTimeMillis() - f.getLong(this);
+			if (timeSinceLast < 1000) {
+				try {
+					Thread.sleep(1000 - timeSinceLast);
+				} catch (InterruptedException e) {
+				}
+			}
+			f.setLong(this, System.currentTimeMillis());
+		} catch (Throwable e) {
+			LOGGER.log(Level.WARNING, "Unable to get/set lastBuildStartTime",
+					e);
+		}
+		// End hack
+
+		try {
+			/*
+			 * Specify project class (instead of relying on getClass()).  Use of
+			 * getClass() in the super-type gets this sub-type.  The build class
+			 * doesn't have a constructor for this type -- we want to use the
+			 * super-type.
+			 */
+			FreeStyleBuild lastBuild = getBuildClass().getConstructor(
+					FreeStyleProject.class).newInstance(this);
+			builds.put(lastBuild);
+			return lastBuild;
+		} catch (InstantiationException e) {
+			throw new Error(e);
+		} catch (IllegalAccessException e) {
+			throw new Error(e);
+		} catch (InvocationTargetException e) {
+			throw handleInvocationTargetException(e);
+		} catch (NoSuchMethodException e) {
+			throw new Error(e);
+		}
+	}
+
+	private IOException handleInvocationTargetException(
+			InvocationTargetException e) {
+		Throwable t = e.getTargetException();
+		if (t instanceof Error) {
+			throw (Error) t;
+		}
+		if (t instanceof RuntimeException) {
+			throw (RuntimeException) t;
+		}
+		if (t instanceof IOException) {
+			return (IOException) t;
+		}
+		throw new Error(t);
+	}
+
+	protected FreeStyleBuild loadBuild(File dir) throws IOException {
+		try {
+			/*
+			 * Specify project class (instead of relying on getClass()).  Use of
+			 * getClass() in the super-type gets this sub-type.  The build class
+			 * doesn't have a constructor for this type -- we want to use the
+			 * super-type.
+			 */
+			return getBuildClass().getConstructor(FreeStyleProject.class,
+					File.class).newInstance(this, dir);
+		} catch (InstantiationException e) {
+			throw new Error(e);
+		} catch (IllegalAccessException e) {
+			throw new Error(e);
+		} catch (InvocationTargetException e) {
+			throw handleInvocationTargetException(e);
+		} catch (NoSuchMethodException e) {
+			throw new Error(e);
+		}
+	}
+
+	//endregion AbstractProject mirror
 
 	/**
 	 * Exposes the triggers so they can be set from the parent.  Used for the
@@ -157,7 +241,7 @@ public class FreeStyleBranchProject
 	 *
 	 * @return direct access to list of properties
 	 */
-	public CopyOnWriteList<JobProperty<? super FreeStyleBranchProject>> getPropertiesList() {
+	public CopyOnWriteList<JobProperty<? super FreeStyleProject>> getPropertiesList() {
 		return properties;
 	}
 
@@ -197,47 +281,6 @@ public class FreeStyleBranchProject
 					"This sub-project configuration cannot be edited directly.");
 		}
 		super.doConfigDotXml(req, rsp);
-	}
-
-	/**
-	 * This project type has to be a {@link TopLevelItem} in order to be shown
-	 * in the multi-branch project's branch list, but {@link TopLevelItem}s are
-	 * also shown in the new job list.  This hack will remove this project type
-	 * from the new job list.
-	 *
-	 * @author Stephen Connolly
-	 */
-	@Extension
-	public static class DescriptorImpl extends AbstractProjectDescriptor {
-
-		/**
-		 * {@inheritDoc}
-		 */
-		@Override
-		public String getDisplayName() {
-			return null;
-		}
-
-		/**
-		 * {@inheritDoc}
-		 */
-		@Override
-		public TopLevelItem newInstance(ItemGroup parent, String name) {
-			throw new UnsupportedOperationException();
-		}
-
-		/**
-		 * Method that removes this descriptor from the list of {@link
-		 * hudson.model.TopLevelItemDescriptor}s because we don't want to appear
-		 * as one.
-		 */
-		@Initializer(after = InitMilestone.JOB_LOADED,
-				before = InitMilestone.COMPLETED)
-		@SuppressWarnings(UNUSED)
-		public static void postInitialize() {
-			DescriptorExtensionList<TopLevelItem, TopLevelItemDescriptor> all = Items.all();
-			all.remove(all.get(DescriptorImpl.class));
-		}
 	}
 
 	/**
