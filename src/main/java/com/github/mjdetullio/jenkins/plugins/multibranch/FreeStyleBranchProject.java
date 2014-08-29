@@ -55,11 +55,12 @@ import jenkins.model.Jenkins;
 
 /**
  * Wrapper for the {@link FreeStyleProject} class for use as a sub-project of
- * the {@link FreeStyleMultiBranchProject} type.
+ * the {@link AbstractMultiBranchProject} type.
  *
  * @author Matthew DeTullio
  */
-public class FreeStyleBranchProject extends FreeStyleProject {
+public class FreeStyleBranchProject extends FreeStyleProject
+		implements BranchProject {
 
 	private static final String CLASSNAME = FreeStyleBranchProject.class.getName();
 	private static final Logger LOGGER = Logger.getLogger(CLASSNAME);
@@ -94,21 +95,18 @@ public class FreeStyleBranchProject extends FreeStyleProject {
 	}
 
 	/**
-	 * Returns whether or not this is the template.
-	 *
-	 * @return boolean
+	 * {@inheritDoc}
 	 */
+	@Override
 	public boolean isTemplate() {
 		return template;
 	}
 
 	/**
-	 * Sets whether or not this is the template
-	 *
-	 * @param isTemplate - true/false
-	 * @throws IOException - if problem saving
+	 * {@inheritDoc}
 	 */
-	public void setIsTemplate(boolean isTemplate) throws IOException {
+	@Override
+	public void markTemplate(boolean isTemplate) throws IOException {
 		template = isTemplate;
 		save();
 	}
@@ -282,6 +280,22 @@ public class FreeStyleBranchProject extends FreeStyleProject {
 		}
 		super.doConfigDotXml(req, rsp);
 	}
+
+	// TODO: Contribute to other OSS projects to make this possible
+	//	/**
+	//	 * Our descriptor that is simply a duplicate of the normal {@link FreeStyleProject}
+	//	 * descriptor.
+	//	 */
+	//	@Extension
+	//	public static class DescriptorImpl extends FreeStyleProject.DescriptorImpl {
+	//		/**
+	//		 * {@inheritDoc}
+	//		 */
+	//		@Override
+	//		public boolean isInstantiable() {
+	//			return false;
+	//		}
+	//	}
 
 	/**
 	 * Gives this class an alias for configuration XML.

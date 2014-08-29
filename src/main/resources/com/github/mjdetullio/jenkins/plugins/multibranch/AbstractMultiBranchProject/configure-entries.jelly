@@ -70,6 +70,6 @@ THE SOFTWARE.
 		</j:forEach>
 	</f:section>
 
-	<st:include it="${it.templateProject}"
+	<st:include it="${it.template}"
 				page="configure-entries.jelly"/>
 </j:jelly>
