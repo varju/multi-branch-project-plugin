@@ -1,7 +1,7 @@
 /*
  * The MIT License
  *
- * Copyright (c) 2014, Matthew DeTullio, Stephen Connolly
+ * Copyright (c) 2014, Matthew DeTullio
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,7 +27,6 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
-import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -35,8 +34,6 @@ import org.kohsuke.stapler.StaplerRequest;
 import org.kohsuke.stapler.StaplerResponse;
 import org.kohsuke.stapler.WebMethod;
 import org.kohsuke.stapler.interceptor.RequirePOST;
-
-import com.infradna.tool.bridge_method_injector.WithBridgeMethods;
 
 import hudson.init.InitMilestone;
 import hudson.init.Initializer;
@@ -46,11 +43,6 @@ import hudson.model.FreeStyleProject;
 import hudson.model.Item;
 import hudson.model.ItemGroup;
 import hudson.model.Items;
-import hudson.model.JobProperty;
-import hudson.triggers.Trigger;
-import hudson.triggers.TriggerDescriptor;
-import hudson.util.CopyOnWriteList;
-import hudson.util.DescribableList;
 import jenkins.model.Jenkins;
 
 /**
@@ -151,6 +143,7 @@ public class FreeStyleBranchProject extends FreeStyleProject
 				try {
 					Thread.sleep(1000 - timeSinceLast);
 				} catch (InterruptedException e) {
+					// No-op
 				}
 			}
 			f.setLong(this, System.currentTimeMillis());
@@ -221,29 +214,6 @@ public class FreeStyleBranchProject extends FreeStyleProject
 	//endregion AbstractProject mirror
 
 	/**
-	 * Exposes the triggers so they can be set from the parent.  Used for the
-	 * template.  For the branch sub-projects, triggers are unmarshaled from
-	 * XML.
-	 *
-	 * @return list of triggers
-	 */
-	@WithBridgeMethods(List.class)
-	public DescribableList<Trigger<?>, TriggerDescriptor> getTriggersList() {
-		return triggers();
-	}
-
-	/**
-	 * Exposes the job properties so they can be manipulated from the parent.
-	 * Used for the template, which requires properties to be cleared so they
-	 * they can be rebuilt. <p/> Warning: offers direct access to list
-	 *
-	 * @return direct access to list of properties
-	 */
-	public CopyOnWriteList<JobProperty<? super FreeStyleProject>> getPropertiesList() {
-		return properties;
-	}
-
-	/**
 	 * Disables renaming of this project type. <p/> Inherited docs: <p/>
 	 * {@inheritDoc}
 	 */
@@ -252,17 +222,6 @@ public class FreeStyleBranchProject extends FreeStyleProject
 	public void doDoRename(StaplerRequest req, StaplerResponse rsp) {
 		throw new UnsupportedOperationException(
 				"Renaming sub-projects is not supported.  They should only be added or deleted.");
-	}
-
-	/**
-	 * Disables configuring of this project type via Stapler. <p/> Inherited
-	 * docs: <p/> {@inheritDoc}
-	 */
-	@Override
-	@RequirePOST
-	public void doConfigSubmit(StaplerRequest req, StaplerResponse rsp) {
-		throw new UnsupportedOperationException(
-				"This sub-project configuration cannot be edited directly.");
 	}
 
 	/**

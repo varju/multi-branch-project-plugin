@@ -1,8 +1,35 @@
+/*
+ * The MIT License
+ *
+ * Copyright (c) 2014, Matthew DeTullio, Stephen Connolly
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
 package com.github.mjdetullio.jenkins.plugins.multibranch;
 
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.lang.reflect.Field;
+import java.net.URLEncoder;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -42,6 +69,8 @@ import hudson.model.HealthReport;
 import hudson.model.Item;
 import hudson.model.ItemGroup;
 import hudson.model.Items;
+import hudson.model.JobProperty;
+import hudson.model.JobPropertyDescriptor;
 import hudson.model.Result;
 import hudson.model.TaskListener;
 import hudson.model.TopLevelItem;
@@ -49,6 +78,7 @@ import hudson.model.View;
 import hudson.model.ViewDescriptor;
 import hudson.model.ViewGroup;
 import hudson.model.ViewGroupMixIn;
+import hudson.model.listeners.ItemListener;
 import hudson.tasks.Publisher;
 import hudson.triggers.SCMTrigger;
 import hudson.triggers.Trigger;
@@ -57,13 +87,17 @@ import hudson.util.FormValidation;
 import hudson.util.TimeUnit2;
 import hudson.views.DefaultViewsTabBar;
 import hudson.views.ViewsTabBar;
+import static javax.servlet.http.HttpServletResponse.SC_BAD_REQUEST;
 import jenkins.model.Jenkins;
+import jenkins.model.ProjectNamingStrategy;
 import jenkins.scm.api.SCMHead;
 import jenkins.scm.api.SCMSource;
 import jenkins.scm.api.SCMSourceCriteria;
 import jenkins.scm.api.SCMSourceDescriptor;
 import jenkins.scm.api.SCMSourceOwner;
 import jenkins.scm.impl.SingleSCMSource;
+import net.sf.json.JSONException;
+import net.sf.json.JSONObject;
 
 /**
  * @author Matthew DeTullio
@@ -153,7 +187,22 @@ public abstract class AbstractMultiBranchProject<P extends AbstractProject<P, B>
 			}
 		};
 
-		initTemplate();
+		// TODO does this work? if so remove initTemplate()
+		//initTemplate();
+		File templateDir = new File(getRootDir(), "template");
+		try {
+			if (!(new File(templateDir, "config.xml").isFile())) {
+				templateProject = createNewSubProject(this, "template");
+			} else {
+				//noinspection unchecked
+				templateProject = (T) Items.load(this, templateDir);
+			}
+			templateProject.markTemplate(true);
+			templateProject.disable();
+		} catch (IOException e) {
+			LOGGER.log(Level.WARNING,
+					"Failed to load template project " + templateDir, e);
+		}
 
 		if (getBranchesDir().isDirectory()) {
 			for (File branch : getBranchesDir().listFiles(new FileFilter() {
@@ -493,12 +542,128 @@ public abstract class AbstractMultiBranchProject<P extends AbstractProject<P, B>
 	}
 
 	/**
+	 * {@inheritDoc}
+	 */
+	@Override
+	public void doConfigSubmit(StaplerRequest req, StaplerResponse rsp)
+			throws ServletException, Descriptor.FormException, IOException {
+		checkPermission(CONFIGURE);
+
+		description = req.getParameter("description");
+
+		makeDisabled(req.getParameter("disable") != null);
+
+		try {
+			JSONObject json = req.getSubmittedForm();
+
+			setDisplayName(json.optString("displayNameOrNull"));
+
+			/*
+			 * Save job properties to the parent project.
+			 * Needed for things like project-based matrix authorization so the
+			 * parent project's ACL works as desired.
+			 */
+			DescribableList<JobProperty<?>, JobPropertyDescriptor> t = new DescribableList<JobProperty<?>, JobPropertyDescriptor>(
+					NOOP, getAllProperties());
+			t.rebuild(req, json.optJSONObject("properties"),
+					JobPropertyDescriptor.getPropertyDescriptors(
+							this.getClass()));
+			properties.clear();
+			for (JobProperty p : t) {
+				// Hack to set property owner since it is not exposed
+				// p.setOwner(this)
+				try {
+					Field f = JobProperty.class.getDeclaredField("owner");
+					f.setAccessible(true);
+					f.set(p, this);
+				} catch (Throwable e) {
+					LOGGER.log(Level.WARNING,
+							"Unable to set job property owner", e);
+				}
+				// End hack
+				//noinspection unchecked
+				properties.add(p);
+			}
+
+			String syncBranchesCron = json.getString("syncBranchesCron");
+			try {
+				restartSyncBranchesTrigger(syncBranchesCron);
+			} catch (ANTLRException e) {
+				throw new IllegalArgumentException(
+						"Failed to instantiate SyncBranchesTrigger", e);
+			}
+
+			primaryView = json.getString("primaryView");
+
+			JSONObject scmSourceJson = json.optJSONObject("scmSource");
+			if (scmSourceJson == null) {
+				scmSource = null;
+			} else {
+				int value = Integer.parseInt(scmSourceJson.getString("value"));
+				SCMSourceDescriptor descriptor = getSCMSourceDescriptors(
+						true).get(
+						value);
+				scmSource = descriptor.newInstance(req, scmSourceJson);
+				scmSource.setOwner(this);
+			}
+
+			templateProject.doConfigSubmit(
+					new TemplateStaplerRequestWrapper(req), rsp);
+
+			save();
+			// TODO could this be used to trigger syncBranches()?
+			ItemListener.fireOnUpdated(this);
+
+			String newName = req.getParameter("name");
+			final ProjectNamingStrategy namingStrategy = Jenkins.getInstance().getProjectNamingStrategy();
+			if (newName != null && !newName.equals(name)) {
+				// check this error early to avoid HTTP response splitting.
+				Jenkins.checkGoodName(newName);
+				namingStrategy.checkName(newName);
+				rsp.sendRedirect("rename?newName=" + URLEncoder.encode(newName,
+						"UTF-8"));
+			} else {
+				if (namingStrategy.isForceExistingJobs()) {
+					namingStrategy.checkName(name);
+				}
+				// templateProject.doConfigSubmit(req, rsp) already does this
+				//noinspection ThrowableResultOfMethodCallIgnored
+				//FormApply.success(".").generateResponse(req, rsp, null);
+			}
+		} catch (JSONException e) {
+			StringWriter sw = new StringWriter();
+			PrintWriter pw = new PrintWriter(sw);
+			pw.println(
+					"Failed to parse form data. Please report this problem as a bug");
+			pw.println("JSON=" + req.getSubmittedForm());
+			pw.println();
+			e.printStackTrace(pw);
+
+			rsp.setStatus(SC_BAD_REQUEST);
+			sendError(sw.toString(), req, rsp, true);
+		}
+		//endregion Job mirror
+
+		//region AbstractProject mirror
+		updateTransientActions();
+
+		// notify the queue as the project might be now tied to different node
+		Jenkins.getInstance().getQueue().scheduleMaintenance();
+
+		// this is to reflect the upstream build adjustments done above
+		Jenkins.getInstance().rebuildDependencyGraphAsync();
+		//endregion AbstractProject mirror
+
+		// TODO run this separately since it can block completion (user redirect) if unable to fetch from repository
+		getSyncBranchesTrigger().run();
+	}
+
+	/**
 	 * Stops all triggers, then if a non-null spec is given clears all triggers
 	 * and creates a new {@link SyncBranchesTrigger} from the spec, and finally
 	 * starts all triggers.
 	 */
-	// TODO: make private after abstracting from sub-types
-	protected synchronized void restartSyncBranchesTrigger(String cronTabSpec)
+	private synchronized void restartSyncBranchesTrigger(String cronTabSpec)
 			throws IOException, ANTLRException {
 		for (Trigger trigger : triggers()) {
 			trigger.stop();
@@ -858,18 +1023,27 @@ public abstract class AbstractMultiBranchProject<P extends AbstractProject<P, B>
 		// TODO: build for each sub-project?
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	public boolean isFingerprintConfigured() {
 		return false;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	protected void submit(StaplerRequest req, StaplerResponse rsp)
 			throws IOException,
 			ServletException, Descriptor.FormException {
-
+		// No-op
 	}
 
+	/**
+	 * {@inheritDoc}
+	 */
 	@Override
 	protected List<Action> createTransientActions() {
 		List<Action> r = super.createTransientActions();
