@@ -341,9 +341,9 @@ public class FreeStyleMultiBranchProject extends
 	@Override
 	public File getRootDirFor(FreeStyleBranchProject child) {
 		if (child.isTemplate()) {
-			return new File(getRootDir(), Util.rawEncode(child.getName()));
+			return new File(getRootDir(), ProjectUtils.encode(child.getName()));
 		}
-		return new File(getBranchesDir(), Util.rawEncode(child.getName()));
+		return new File(getBranchesDir(), ProjectUtils.encode(child.getName()));
 	}
 
 	/**

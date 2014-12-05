@@ -26,14 +26,22 @@ package com.github.mjdetullio.jenkins.plugins.multibranch;
 import java.io.ByteArrayOutputStream;
 import java.io.UnsupportedEncodingException;
 
+import hudson.Util;
+
 /**
  * Utility methods for multi-branch projects.
  *
  * @author Matthew DeTullio
  */
 public final class ProjectUtils {
+	private static final String ENCODED_PERCENT = "_PERCENT_";
+
 	private ProjectUtils() {
 		// Prevent outside instantiation
+	}
+
+	public static String encode(String s) {
+		return Util.rawEncode(s).replace("%", ENCODED_PERCENT);
 	}
 
 	/**
@@ -46,7 +54,7 @@ public final class ProjectUtils {
 	public static String rawDecode(String s) {
 		final byte[] bytes; // should be US-ASCII but we can be tolerant
 		try {
-			bytes = s.getBytes("UTF-8");
+			bytes = s.replace(ENCODED_PERCENT, "%").getBytes("UTF-8");
 		} catch (UnsupportedEncodingException e) {
 			throw new IllegalStateException(
 					"JLS specification mandates UTF-8 as a supported encoding",
