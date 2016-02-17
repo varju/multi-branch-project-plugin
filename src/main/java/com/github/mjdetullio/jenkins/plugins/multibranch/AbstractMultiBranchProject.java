@@ -23,56 +23,28 @@
  */
 package com.github.mjdetullio.jenkins.plugins.multibranch;
 
-import com.cloudbees.hudson.plugins.folder.computed.ChildObserver;
-import com.cloudbees.hudson.plugins.folder.computed.ComputedFolder;
-import com.cloudbees.hudson.plugins.folder.computed.FolderComputation;
-import com.cloudbees.hudson.plugins.folder.computed.OrphanedItemStrategy;
+import com.cloudbees.hudson.plugins.folder.computed.*;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
-import hudson.Util;
 import hudson.XmlFile;
 import hudson.cli.declarative.CLIMethod;
 import hudson.init.InitMilestone;
 import hudson.init.Initializer;
-import hudson.model.AbstractBuild;
-import hudson.model.AbstractProject;
-import hudson.model.BallColor;
-import hudson.model.Descriptor;
-import hudson.model.Item;
-import hudson.model.ItemGroup;
-import hudson.model.Items;
-import hudson.model.Result;
-import hudson.model.Saveable;
-import hudson.model.TaskListener;
-import hudson.model.TopLevelItem;
-import hudson.model.View;
-import hudson.model.ViewDescriptor;
+import hudson.model.*;
 import hudson.model.listeners.ItemListener;
 import hudson.model.listeners.SaveableListener;
 import hudson.scm.NullSCM;
-import hudson.triggers.SCMTrigger;
-import hudson.triggers.Trigger;
-import hudson.triggers.TriggerDescriptor;
-import hudson.util.AlternativeUiTextProvider;
-import hudson.util.DescribableList;
-import hudson.util.PersistedList;
+import hudson.triggers.*;
+import hudson.util.*;
 import jenkins.model.Jenkins;
-import jenkins.scm.api.SCMHead;
-import jenkins.scm.api.SCMSource;
-import jenkins.scm.api.SCMSourceCriteria;
-import jenkins.scm.api.SCMSourceDescriptor;
-import jenkins.scm.api.SCMSourceOwner;
+import jenkins.scm.api.*;
 import jenkins.scm.impl.SingleSCMSource;
 import jenkins.util.TimeDuration;
 import net.sf.json.JSONObject;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.filefilter.NameFileFilter;
 import org.apache.commons.io.filefilter.TrueFileFilter;
-import org.kohsuke.stapler.HttpRedirect;
-import org.kohsuke.stapler.HttpResponse;
-import org.kohsuke.stapler.QueryParameter;
-import org.kohsuke.stapler.StaplerRequest;
-import org.kohsuke.stapler.StaplerResponse;
+import org.kohsuke.stapler.*;
 import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.interceptor.RequirePOST;
 
@@ -81,16 +53,9 @@ import javax.annotation.Nonnull;
 import javax.servlet.ServletException;
 import javax.xml.transform.Source;
 import javax.xml.transform.stream.StreamSource;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.IOException;
-import java.io.UnsupportedEncodingException;
+import java.io.*;
 import java.lang.reflect.Field;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -191,17 +156,17 @@ public abstract class AbstractMultiBranchProject<P extends AbstractProject<P, B>
 
     private void runSubProjectDisplayNameMigration() {
         for (P project : getItems()) {
-            String projectName = project.getName();
-            String projectNameDecoded = rawDecode(projectName);
-
-            if (!projectName.equals(projectNameDecoded)
-                    && project.getDisplayNameOrNull() == null) {
-                try {
-                    project.setDisplayName(projectNameDecoded);
-                } catch (IOException e) {
-                    LOGGER.log(Level.WARNING, "Failed to update display name for project " + projectName, e);
-                }
-            }
+//            String projectName = project.getName();
+//            String projectNameDecoded = Encoder.decode(projectName);
+//
+//            if (!projectName.equals(projectNameDecoded)
+//                    && project.getDisplayNameOrNull() == null) {
+//                try {
+//                    project.setDisplayName(projectNameDecoded);
+//                } catch (IOException e) {
+//                    LOGGER.log(Level.WARNING, "Failed to update display name for project " + projectName, e);
+//                }
+//            }
         }
     }
 
@@ -217,7 +182,7 @@ public abstract class AbstractMultiBranchProject<P extends AbstractProject<P, B>
             if (getItem(disabledSubProject) == null) {
                 // Didn't find item, so don't add it to new list
                 // Do we have the encoded item though?
-                String encoded = Util.rawEncode(disabledSubProject);
+                String encoded = Encoder.encode(disabledSubProject);
 
                 if (getItem(encoded) != null) {
                     // Found encoded item, add encoded name to new list
@@ -583,7 +548,7 @@ public abstract class AbstractMultiBranchProject<P extends AbstractProject<P, B>
 
         for (SCMHead head : heads) {
             String branchName = head.getName();
-            String branchNameEncoded = Util.rawEncode(branchName);
+            String branchNameEncoded = Encoder.encode(branchName);
 
             listener.getLogger().println("Branch " + branchName + " encoded to " + branchNameEncoded);
 
